@@ -10,17 +10,37 @@ public class MeshGenerator : MonoBehaviour
     private SquareGrid squareGrid;
     public MeshFilter WallMeshFilter;
     public MeshFilter CaveMeshFilter;
-    public MeshFilter InsideMeshFilter;
     public int wallHeight = 5;
-    public Gradient InsideMeshColor;
     private BorderEdgesDS borderEdgesDS;
     private State currentMesh;
+    
+    float nbRooms;
+    Texture2D texture;
+    public MeshFilter InsideMeshFilter;
+    public Gradient InsideMeshColor;
+    public Material InsideMaterial;
 
     private List<Vector3> vertices;
     private List<int> triangles;
+    List<Vector2> uv;
+
     private Dictionary<Vector2, int> mapCoordToVertex;
     public void GenerateMesh(MapDS mapDS, float squareSize, bool addWalls, bool addInsideCave)
     {
+        if (texture == null)
+        {
+            texture = new Texture2D(100, 1);
+            Color[] colors = new Color[100];
+            for (int i = 0; i < 100; i++)
+            {
+                colors[i] = InsideMeshColor.Evaluate(i / 99.0f);
+            }
+            texture.SetPixels(colors);
+            texture.Apply();
+            InsideMaterial.SetTexture("_texture", texture);
+        }
+        
+        nbRooms = GetComponent<MapGenerator>().GetNbRooms();
         squareGrid = new SquareGrid(mapDS, squareSize);
         mapCoordToVertex = new Dictionary<Vector2, int>();
         CreateCaveMesh();
@@ -57,6 +77,7 @@ public class MeshGenerator : MonoBehaviour
 
         vertices = new List<Vector3>();
         triangles = new List<int>();
+        uv = new List<Vector2>();
 
         for (int x = 0; x < squareGrid.squares.GetLength(0); x++)
         {
@@ -69,6 +90,8 @@ public class MeshGenerator : MonoBehaviour
         Mesh mesh = new Mesh();
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
+        mesh.uv = uv.ToArray();
+
         InsideMeshFilter.mesh = mesh;
         mesh.RecalculateNormals();
     }
@@ -192,6 +215,10 @@ public class MeshGenerator : MonoBehaviour
             {
                 mapCoordToVertex[points[i].mapCoord] = vertices.Count;
                 vertices.Add(mapCoordToWorldPos(points[i].mapCoord, currentMesh==State.INSIDE?0:wallHeight));
+                if (currentMesh == State.INSIDE)
+                {
+                    uv.Add(new Vector2((points[i].blockIndex-1) / nbRooms, 0));
+                }
             }
         }
         if (points.Length >= 3)
@@ -327,9 +354,13 @@ public class MeshGenerator : MonoBehaviour
             bottomLeft = _ButtomLeft;
 
             centerTop = topLeft.right;
+            centerTop.blockIndex = Math.Max(topLeft.blockIndex, topRight.blockIndex);
             centerRight = bottomRight.above;
+            centerRight.blockIndex = Math.Max(topRight.blockIndex, bottomRight.blockIndex);
             centerBottom = bottomLeft.right;
+            centerBottom.blockIndex = Math.Max(bottomRight.blockIndex, bottomLeft.blockIndex);
             centerLeft = bottomLeft.above;
+            centerLeft.blockIndex = Math.Max(topLeft.blockIndex, bottomLeft.blockIndex);
 
             if (topLeft.active)
                 configuration += 8;
@@ -344,16 +375,18 @@ public class MeshGenerator : MonoBehaviour
     public class Node
     {
         public Vector2 mapCoord;
+        public int blockIndex;
         public Node(Vector2 _mapCoord)
         {
             mapCoord = _mapCoord;
+            blockIndex = -1;
         }
     }
     public class ControlNode : Node
     {
         public bool active;
         public Node above, right;
-        public int blockIndex;
+        
 
         public ControlNode(Vector2 _mapCoord, int _blockIndex) : base(_mapCoord)
         {

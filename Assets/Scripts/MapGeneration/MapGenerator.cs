@@ -251,7 +251,7 @@ public class MapGenerator : MonoBehaviour
                     int drawY = tile.y + y;
                     if (mapDS.IsInMapRange(drawX, drawY))
                     {
-                        mapDS[drawX, drawY] = rooms.Count;
+                        mapDS[drawX, drawY] = rooms.Count + 1;
                     }
                 }
             }
@@ -326,9 +326,9 @@ public class MapGenerator : MonoBehaviour
 
         return wallPercent / area;
     }
-    Vector3 CoordToWorldPoint(Vector2Int tile)
+    public int GetNbRooms()
     {
-        return new Vector3(-width / 2 + .5f + tile.x, 2, -height / 2 + .5f + tile.y);
+        return rooms.Count;
     }
 
     // usefull data structures for map generation
