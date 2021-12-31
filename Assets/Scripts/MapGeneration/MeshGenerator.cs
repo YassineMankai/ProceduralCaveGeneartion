@@ -1,22 +1,40 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class MeshGenerator : MonoBehaviour
 {
-    public SquareGrid squareGrid;
-    public MeshFilter walls;
-    List<Vector3> vertices;
-    List<int> triangles;
-    private BorderEdgesDS borderEdgesDS;
-    public void GenerateMesh(MapDS mapBuffer, float squareSize, float wallHeight)
-    {
-        squareGrid = new SquareGrid(mapBuffer, squareSize, wallHeight);
+    enum State { CAVE, WALL, INSIDE };
 
+    private SquareGrid squareGrid;
+    public MeshFilter WallMeshFilter;
+    public MeshFilter CaveMeshFilter;
+    public MeshFilter InsideMeshFilter;
+    public int wallHeight = 5;
+    public Gradient InsideMeshColor;
+    private BorderEdgesDS borderEdgesDS;
+    private State currentMesh;
+
+    private List<Vector3> vertices;
+    private List<int> triangles;
+    private Dictionary<Vector2, int> mapCoordToVertex;
+    public void GenerateMesh(MapDS mapDS, float squareSize, bool addWalls, bool addInsideCave)
+    {
+        squareGrid = new SquareGrid(mapDS, squareSize);
+        mapCoordToVertex = new Dictionary<Vector2, int>();
+        CreateCaveMesh();
+        if (addWalls)
+            CreateWallMesh();
+        if (addInsideCave)
+            CreateInsideMesh();
+    }
+    void CreateCaveMesh()
+    {
+        currentMesh = State.CAVE;
         vertices = new List<Vector3>();
         triangles = new List<int>();
         borderEdgesDS = new BorderEdgesDS();
-
 
         for (int x = 0; x < squareGrid.squares.GetLength(0); x++)
         {
@@ -26,42 +44,68 @@ public class MeshGenerator : MonoBehaviour
             }
         }
         Mesh mesh = new Mesh();
-        GetComponent<MeshFilter>().mesh = mesh;
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
+        CaveMeshFilter.mesh = mesh;
         mesh.RecalculateNormals();
-        CreateWallMesh(wallHeight);
     }
-    void CreateWallMesh(float WallHeight)
+    void CreateInsideMesh()
     {
-        List<Vector3> wallVertices = new List<Vector3>();
-        List<int> wallTriangles = new List<int>();
-        Mesh wallMesh = new Mesh();
+        currentMesh = State.INSIDE;
 
-        foreach (Edge edge in borderEdgesDS.edgeSet)
+        mapCoordToVertex.Clear();
+
+        vertices = new List<Vector3>();
+        triangles = new List<int>();
+
+        for (int x = 0; x < squareGrid.squares.GetLength(0); x++)
         {
-                int startIndex = wallVertices.Count;
-                wallVertices.Add(vertices[edge[0]]); // left
-                wallVertices.Add(vertices[edge[1]]); // right
-                wallVertices.Add(vertices[edge[1]] - Vector3.up * WallHeight); // bottom right
-                wallVertices.Add(vertices[edge[0]] - Vector3.up * WallHeight); // bottom left
-
-                wallTriangles.Add(startIndex + 0);
-                wallTriangles.Add(startIndex + 1);
-                wallTriangles.Add(startIndex + 2);
-
-                wallTriangles.Add(startIndex + 2);
-                wallTriangles.Add(startIndex + 3);
-                wallTriangles.Add(startIndex + 0);
+            for (int y = 0; y < squareGrid.squares.GetLength(1); y++)
+            {
+                TriangulateSquare(squareGrid.squares[x, y]);
+            }
         }
-        wallMesh.vertices = wallVertices.ToArray();
-        wallMesh.triangles = wallTriangles.ToArray();
-        walls.mesh = wallMesh;
+
+        Mesh mesh = new Mesh();
+        mesh.vertices = vertices.ToArray();
+        mesh.triangles = triangles.ToArray();
+        InsideMeshFilter.mesh = mesh;
+        mesh.RecalculateNormals();
+    }
+    void CreateWallMesh()
+    {
+        currentMesh = State.WALL;
+        List<Vector3> wall_vertices = new List<Vector3>();
+        List<int> wall_triangles = new List<int>();
+        foreach (Edge edge in borderEdgesDS.edgeSet)
+        {            
+            int startIndex = wall_vertices.Count;
+            wall_vertices.Add(vertices[edge[0]]); // left
+            wall_vertices.Add(vertices[edge[1]]); // right
+            wall_vertices.Add(vertices[edge[1]] - Vector3.up * wallHeight); // bottom right
+            wall_vertices.Add(vertices[edge[0]] - Vector3.up * wallHeight); // bottom left
+
+            wall_triangles.Add(startIndex + 0);
+            wall_triangles.Add(startIndex + 1);
+            wall_triangles.Add(startIndex + 2);
+
+            wall_triangles.Add(startIndex + 2);
+            wall_triangles.Add(startIndex + 3);
+            wall_triangles.Add(startIndex + 0);
+        }
+        Mesh mesh = new Mesh();
+        mesh.vertices = wall_vertices.ToArray();
+        mesh.triangles = wall_triangles.ToArray();
+        WallMeshFilter.mesh = mesh;
+        mesh.RecalculateNormals();
     }
 
     void TriangulateSquare(Square square)
     {
-        switch (square.configuration)
+        bool insideCave = currentMesh == State.INSIDE;
+        int conf = insideCave ? 15 - square.configuration : square.configuration;
+
+        switch (conf)
         {
             case 0:
                 break;
@@ -94,10 +138,26 @@ public class MeshGenerator : MonoBehaviour
                 MeshFromPoints(square.topLeft, square.topRight, square.centerRight, square.centerLeft);
                 break;
             case 5:
-                MeshFromPoints(square.centerTop, square.topRight, square.centerRight, square.centerBottom, square.bottomLeft, square.centerLeft);
+                if (insideCave)
+                {
+                    MeshFromPoints(square.topRight, square.centerRight, square.centerTop);
+                    MeshFromPoints(square.centerLeft, square.centerBottom, square.bottomLeft);
+                }
+                else
+                {
+                    MeshFromPoints(square.centerTop, square.topRight, square.centerRight, square.centerBottom, square.bottomLeft, square.centerLeft);
+                }
                 break;
             case 10:
-                MeshFromPoints(square.topLeft, square.centerTop, square.centerRight, square.bottomRight, square.centerBottom, square.centerLeft);
+                if (insideCave)
+                {
+                    MeshFromPoints(square.topLeft, square.centerTop, square.centerLeft);
+                    MeshFromPoints(square.bottomRight, square.centerBottom, square.centerRight);
+                }
+                else
+                {
+                    MeshFromPoints(square.topLeft, square.centerTop, square.centerRight, square.bottomRight, square.centerBottom, square.centerLeft);
+                }
                 break;
 
             // 3 point:
@@ -128,10 +188,10 @@ public class MeshGenerator : MonoBehaviour
     {
         for (int i = 0; i < points.Length; i++)
         {
-            if (points[i].vertexIndex == -1)
+            if (!mapCoordToVertex.ContainsKey(points[i].mapCoord))
             {
-                points[i].vertexIndex = vertices.Count;
-                vertices.Add(points[i].position);
+                mapCoordToVertex[points[i].mapCoord] = vertices.Count;
+                vertices.Add(mapCoordToWorldPos(points[i].mapCoord, currentMesh==State.INSIDE?0:wallHeight));
             }
         }
         if (points.Length >= 3)
@@ -145,13 +205,23 @@ public class MeshGenerator : MonoBehaviour
     }
     void CreateTriangle(Node a, Node b, Node c)
     {
-        triangles.Add(a.vertexIndex);
-        triangles.Add(b.vertexIndex);
-        triangles.Add(c.vertexIndex);
-        borderEdgesDS.UpdateEdgeState(a.vertexIndex, b.vertexIndex);
-        borderEdgesDS.UpdateEdgeState(b.vertexIndex, c.vertexIndex);
-        borderEdgesDS.UpdateEdgeState(c.vertexIndex, a.vertexIndex);
+        int indexA = mapCoordToVertex[a.mapCoord];
+        int indexB = mapCoordToVertex[b.mapCoord];
+        int indexC = mapCoordToVertex[c.mapCoord];
+
+        bool insideCave = currentMesh == State.INSIDE;
+        triangles.Add(indexA);
+        triangles.Add(indexB);
+        triangles.Add(indexC);
+        if (!insideCave)
+        {
+            borderEdgesDS.UpdateEdgeState(indexA, indexB);
+            borderEdgesDS.UpdateEdgeState(indexB, indexC);
+            borderEdgesDS.UpdateEdgeState(indexC, indexA);
+        }
     }
+
+    // usefull data structures for mesh generation
     public class BorderEdgesDS
     {
         public HashSet<Edge> edgeSet;
@@ -176,12 +246,12 @@ public class MeshGenerator : MonoBehaviour
 
 
     }
-    public struct Edge
+    public struct Edge : IEquatable<Edge>
     {
         int vertexIndexA;
         int vertexIndexB;
 
-        public Edge(int a, int b)
+        public Edge(int a, int b) : this()
         {
             vertexIndexA = a;
             vertexIndexB = b;
@@ -195,16 +265,29 @@ public class MeshGenerator : MonoBehaviour
             }
         }
 
+        public override bool Equals(object obj) => obj is Edge other && this.Equals(other);
+
+        public bool Equals(Edge p) => vertexIndexA == p.vertexIndexA && vertexIndexB == p.vertexIndexB;
+
+        public override int GetHashCode() => (vertexIndexA, vertexIndexB).GetHashCode();
+
+        public static bool operator ==(Edge lhs, Edge rhs) => lhs.Equals(rhs);
+
+        public static bool operator !=(Edge lhs, Edge rhs) => !(lhs == rhs);
     }
     public class SquareGrid
     {
         public Square[,] squares;
-        public SquareGrid(MapDS mapDS, float squareSize, float WallHeight)
+        public float mapWidth;
+        public float mapHeight;
+        public float squareSize;
+        public SquareGrid(MapDS mapDS, float _squareSize)
         {
             int nodeCountX = mapDS.GetLength(0);
             int nodeCountY = mapDS.GetLength(1);
-            float mapWidth = nodeCountX * squareSize;
-            float mapHeight = nodeCountY * squareSize;
+            mapWidth = nodeCountX * squareSize;
+            mapHeight = nodeCountY * squareSize;
+            squareSize = _squareSize;
 
             ControlNode[,] controlNodes = new ControlNode[nodeCountX, nodeCountY];
 
@@ -212,8 +295,7 @@ public class MeshGenerator : MonoBehaviour
             {
                 for (int y = 0; y < nodeCountY; y++)
                 {
-                    Vector3 pos = new Vector3(-mapWidth / 2 + (x + .5f) * squareSize, WallHeight, -mapHeight / 2 + (y + .5f) * squareSize);
-                    controlNodes[x, y] = new ControlNode(pos, mapDS[x, y] == 1, squareSize);
+                    controlNodes[x, y] = new ControlNode(new Vector2(x, y), mapDS[x, y]);
                 }
             }
             squares = new Square[nodeCountX - 1, nodeCountY - 1];
@@ -225,6 +307,12 @@ public class MeshGenerator : MonoBehaviour
                 }
             }
         }
+
+        
+    }
+    public Vector3 mapCoordToWorldPos(Vector2 mapCoor, float height)
+    {
+        return new Vector3(-squareGrid.mapWidth / 2 + (mapCoor.x + .5f) * squareGrid.squareSize, height, -squareGrid.mapHeight / 2 + (mapCoor.y + .5f) * squareGrid.squareSize);
     }
     public class Square
     {
@@ -255,24 +343,25 @@ public class MeshGenerator : MonoBehaviour
     }
     public class Node
     {
-        public Vector3 position;
-        public int vertexIndex = -1;
-
-        public Node(Vector3 _pos)
+        public Vector2 mapCoord;
+        public Node(Vector2 _mapCoord)
         {
-            position = _pos;
+            mapCoord = _mapCoord;
         }
     }
     public class ControlNode : Node
     {
         public bool active;
         public Node above, right;
+        public int blockIndex;
 
-        public ControlNode(Vector3 _pos, bool _active, float squareSize) : base(_pos)
+        public ControlNode(Vector2 _mapCoord, int _blockIndex) : base(_mapCoord)
         {
-            active = _active;
-            above = new Node(position + Vector3.forward * squareSize / 2f);
-            right = new Node(position + Vector3.right * squareSize / 2f);
+            active = _blockIndex < 0;
+            blockIndex = _blockIndex;
+
+            above = new Node(mapCoord + Vector2.up * .5f);
+            right = new Node(mapCoord + Vector2.right * .5f);
         }
     }
 }
