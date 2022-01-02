@@ -8,15 +8,15 @@ public class MeshGenerator : MonoBehaviour
     enum State { CAVE, WALL, INSIDE };
 
     private SquareGrid squareGrid;
-    public MeshFilter WallMeshFilter;
-    public MeshFilter CaveMeshFilter;
+    public MeshFilter wallMeshFilter;
+    public MeshFilter caveMeshFilter;
     public int wallHeight = 5;
     private BorderEdgesDS borderEdgesDS;
     private State currentMesh;
     
     float nbRooms;
     Texture2D texture;
-    public MeshFilter InsideMeshFilter;
+    public MeshFilter insideMeshFilter;
     public Gradient InsideMeshColor;
     public Material InsideMaterial;
 
@@ -66,8 +66,11 @@ public class MeshGenerator : MonoBehaviour
         Mesh mesh = new Mesh();
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
-        CaveMeshFilter.mesh = mesh;
+        caveMeshFilter.mesh = mesh;
         mesh.RecalculateNormals();
+
+        MeshCollider caveCollider = caveMeshFilter.gameObject.GetComponent<MeshCollider>();
+        caveCollider.sharedMesh = mesh;
     }
     void CreateInsideMesh()
     {
@@ -91,9 +94,11 @@ public class MeshGenerator : MonoBehaviour
         mesh.vertices = vertices.ToArray();
         mesh.triangles = triangles.ToArray();
         mesh.uv = uv.ToArray();
-
-        InsideMeshFilter.mesh = mesh;
+        insideMeshFilter.mesh = mesh;
         mesh.RecalculateNormals();
+
+        MeshCollider floorCollider = insideMeshFilter.gameObject.GetComponent<MeshCollider>();
+        floorCollider.sharedMesh = mesh;
     }
     void CreateWallMesh()
     {
@@ -119,10 +124,12 @@ public class MeshGenerator : MonoBehaviour
         Mesh mesh = new Mesh();
         mesh.vertices = wall_vertices.ToArray();
         mesh.triangles = wall_triangles.ToArray();
-        WallMeshFilter.mesh = mesh;
+        wallMeshFilter.mesh = mesh;
         mesh.RecalculateNormals();
-    }
 
+        MeshCollider meshCollider = wallMeshFilter.gameObject.GetComponent<MeshCollider>();
+        meshCollider.sharedMesh = mesh;
+    }
     void TriangulateSquare(Square square)
     {
         bool insideCave = currentMesh == State.INSIDE;
@@ -217,7 +224,7 @@ public class MeshGenerator : MonoBehaviour
                 vertices.Add(mapCoordToWorldPos(points[i].mapCoord, currentMesh==State.INSIDE?0:wallHeight));
                 if (currentMesh == State.INSIDE)
                 {
-                    uv.Add(new Vector2((points[i].blockIndex-1) / nbRooms, 0));
+                    uv.Add(new Vector2((points[i].blockIndex-1) / nbRooms, points[i].blockIndex));
                 }
             }
         }
@@ -246,6 +253,22 @@ public class MeshGenerator : MonoBehaviour
             borderEdgesDS.UpdateEdgeState(indexB, indexC);
             borderEdgesDS.UpdateEdgeState(indexC, indexA);
         }
+    }
+
+    public void MarkRoom(int room)
+    {
+        for (int i=0; i<uv.Count; i++)
+        {
+            if ((int)Math.Floor(uv[i].y) == room)
+            {
+                Vector2 res = new Vector2(1, 1);
+                uv[i] = res;
+            }
+        }
+        Mesh currentMesh = insideMeshFilter.mesh;
+        currentMesh.uv = uv.ToArray();
+        insideMeshFilter.mesh = currentMesh;
+        currentMesh.RecalculateNormals();
     }
 
     // usefull data structures for mesh generation
@@ -340,6 +363,10 @@ public class MeshGenerator : MonoBehaviour
     public Vector3 mapCoordToWorldPos(Vector2 mapCoor, float height)
     {
         return new Vector3(-squareGrid.mapWidth / 2 + (mapCoor.x + .5f) * squareGrid.squareSize, height, -squareGrid.mapHeight / 2 + (mapCoor.y + .5f) * squareGrid.squareSize);
+    }
+    public Vector2 WorldPosToMapCoord(Vector3 worldPos)
+    {
+        return new Vector2(worldPos.x + squareGrid.mapWidth / 2 - .5f, worldPos.z + squareGrid.mapHeight / 2 - .5f);
     }
     public class Square
     {

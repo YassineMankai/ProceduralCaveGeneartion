@@ -37,6 +37,7 @@ public class MapDS
             if (xInsideCave < 0 || xInsideCave >= currentWidth
                 || yInsideCave < currentborderSize || yInsideCave >= currentHeight)
                 return -1;
+
             return mapBuffers[currentBuffer, xInsideCave, yInsideCave];
         }
 
@@ -70,8 +71,6 @@ public class MapDS
     {
         return x >= 0 && x < GetLength(0) && y >= 0 && y < GetLength(1);
     }
-
-
 }
 
 public class MapGenerator : MonoBehaviour
@@ -101,6 +100,10 @@ public class MapGenerator : MonoBehaviour
     [Range(2, 10)]
     public int bridgeRadius = 2;
 
+    public GameObject MyPlayer;
+    public GameObject Camera;
+
+
     MapDS mapDS;
     List<Block> rooms;  // <0 for wall; >0 for rooms;  rooms.Count for bridge
     List<BridgeNode> roomGraph;
@@ -109,6 +112,10 @@ public class MapGenerator : MonoBehaviour
     private void Start()
     {
         GenerateMap();
+        GameObject player = Instantiate(MyPlayer);
+        player.name = "Player";
+        MyPlayer.transform.parent = null;
+        Camera.AddComponent<CameraController>();
     }
     public void GenerateMap()
     {
@@ -124,7 +131,6 @@ public class MapGenerator : MonoBehaviour
         meshGen.GenerateMesh(mapDS, 1, true, true);
     }
 
-
     // functions to process the map
     void RandomFillMap()
     {
@@ -137,9 +143,9 @@ public class MapGenerator : MonoBehaviour
         {
             for (int y = 0; y < height; y++)
             {
-                if (x == 0 || x == width - 1 || y == 0 || y == height - 1)
+                if(x + y < 10)  // create an entry
                 {
-                    mapDS[x, y] = -1;
+                        mapDS[x, y] = 0;
                 }
                 else
                 {
@@ -154,16 +160,22 @@ public class MapGenerator : MonoBehaviour
         {
             for (int y = 0; y < height; y++)
             {
-                float neighborWallPercent = GetSurroundingWallPercent(x, y);
-                //float neighborRoomPercent = 1 - neighborWallPercent;
-
-                if (neighborWallPercent > 0.52f)
-                    mapDS[x, y] = -1;
-                else if (neighborWallPercent < 0.5f)
+                if (x + y < 10) // preserve the entry
+                {
                     mapDS[x, y] = 0;
+                }
                 else
-                    mapDS[x, y] = mapDS[x, y];
+                {
+                    float neighborWallPercent = GetSurroundingWallPercent(x, y);
+                    //float neighborRoomPercent = 1 - neighborWallPercent;
 
+                    if (neighborWallPercent > 0.52f)
+                        mapDS[x, y] = -1;
+                    else if (neighborWallPercent < 0.5f)
+                        mapDS[x, y] = 0;
+                    else
+                        mapDS[x, y] = mapDS[x, y];
+                }
             }
         }
         mapDS.SwapBuffers();
@@ -211,7 +223,7 @@ public class MapGenerator : MonoBehaviour
                 if (mapDS[x, y] == 0) // Add new room
                 {
                     Block current_room = new Block(new Vector2Int(x, y), rooms.Count + 1, mapDS);
-                    if (current_room.blockSize < roomSizeThreshold) // clear small room
+                    if (current_room.blockSize < roomSizeThreshold && !current_room.isEntry) // clear small room
                     {
                         foreach (Vector2Int tile in current_room.tiles)
                         {
@@ -330,7 +342,12 @@ public class MapGenerator : MonoBehaviour
     {
         return rooms.Count;
     }
-
+    public int tileToRoom(Vector2 tile)
+    {
+        int x = (int)Math.Floor(tile.x);
+        int y = (int)Math.Floor(tile.y);
+        return mapDS[x, y];
+    }
     // usefull data structures for map generation
     public struct BridgeNode : IComparable<BridgeNode> // astructure describing a bridge between two rooms
     {
@@ -446,8 +463,8 @@ public class MapGenerator : MonoBehaviour
         public int blockSize;
         public int indexOfExterior;
         public int indexOfBlock;
+        public bool isEntry;
         static readonly Vector2Int[] directions = { new Vector2Int(-1, 0), new Vector2Int(1, 0), new Vector2Int(0, -1), new Vector2Int(0, 1) };
-
 
         public Block(Vector2Int firstTile, int currentBlockIndex, MapDS mapDS)
         {
@@ -456,10 +473,11 @@ public class MapGenerator : MonoBehaviour
             edgeTiles = new List<Vector2Int>();
             indexOfExterior = 0;
             indexOfBlock = currentBlockIndex;
+            isEntry = false;
 
             int tileType = mapDS[firstTile.x, firstTile.y];
 
-            tiles.Add(firstTile);
+            AddTile(firstTile);
 
             int i = 0;
             while (i < tiles.Count)
@@ -475,7 +493,7 @@ public class MapGenerator : MonoBehaviour
                         if (mapDS[neighbor.x, neighbor.y] == tileType)
                         {
                             mapDS[neighbor.x, neighbor.y] = currentBlockIndex;
-                            tiles.Add(neighbor);
+                            AddTile(neighbor);
                         }
                         else if (!isEdgeTile)
                         {
@@ -489,6 +507,12 @@ public class MapGenerator : MonoBehaviour
                 i++;
             }
             blockSize = tiles.Count;
+        }
+        void AddTile(Vector2Int tile)
+        {
+            if (tile.x == 0 && tile.y == 0)
+                isEntry = true;
+            tiles.Add(tile);
         }
         public int CompareTo(Block other)
         {
@@ -519,11 +543,8 @@ public class MapGenerator : MonoBehaviour
         }
         public override bool Equals(object obj) => obj is Block other && this.Equals(other);
         public bool Equals(Block p) => indexOfBlock == p.indexOfBlock;
-
         public override int GetHashCode() => indexOfBlock.GetHashCode();
-
         public static bool operator ==(Block lhs, Block rhs) => lhs.Equals(rhs);
-
         public static bool operator !=(Block lhs, Block rhs) => !(lhs == rhs);
     }
 }
