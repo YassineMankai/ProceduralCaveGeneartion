@@ -124,7 +124,7 @@ public class MapGenerator : MonoBehaviour
         SmoothMap(nbIterations);
         CalculateBlocks(wallBlockSizeThreshold, roomSizeThreshold);
         if (hasBridges)
-            createBridges(bridgeRadius);
+            CreateBridges(bridgeRadius);
 
         mapDS.setBorder(borderSize); // last thing to be applied
         MeshGenerator meshGen = GetComponent<MeshGenerator>();
@@ -238,7 +238,7 @@ public class MapGenerator : MonoBehaviour
             }
         }
     }
-    void createBridges(int bridgeRadius)
+    void CreateBridges(int bridgeRadius)
     {
         //construct a minimum spanning tree connectinf all rooms
         roomGraph = UnionFindRooms.ConstructMSP(rooms);
